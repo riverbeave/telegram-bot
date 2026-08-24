@@ -735,18 +735,46 @@ async def report_reason_selected(callback: CallbackQuery):
     }
     reason = reason_map[callback.data]
     report_id = create_report(user_id, reported_user_id, reason)
-    partner = active_chats.pop(user_id)
+    
+    # Сохраняем partner ДО удаления
+    partner = active_chats[user_id]
+    
+    # Удаляем чат
+    active_chats.pop(user_id, None)
     active_chats.pop(partner, None)
     
-    await callback.message.edit_text(f"✅ <b>Жалоба отправлена!</b>\n\n🚨 Причина: {reason}\n📋 Номер жалобы: #{report_id}", parse_mode='HTML')
-    await bot.send_message(partner, "❌ Собеседник отключился и отправил жалобу.\nЧат завершен.", reply_markup=main_menu())
+    # Жалобщику — текст + ГЛАВНОЕ МЕНЮ
+    await callback.message.edit_text(
+        f"✅ <b>Жалоба отправлена!</b>\n\n🚨 Причина: {reason}\n📋 Номер жалобы: #{report_id}",
+        parse_mode='HTML'
+    )
     
+    # ➡️ ВАЖНО: жалобщику тоже отправляем main_menu!
+    await bot.send_message(
+        user_id,
+        "📋 Вы вышли из чата. Используйте главное меню.",
+        reply_markup=main_menu()
+    )
+    
+    # Нарушителю — текст + ГЛАВНОЕ МЕНЮ
+    await bot.send_message(
+        partner,
+        "❌ Собеседник отключился и отправил жалобу.\nЧат завершен.",
+        reply_markup=main_menu()
+    )
+    
+    # Админу — уведомление
     user_gender = get_gender_text(get_user(user_id).get('gender'))
     reported_gender = get_gender_text(get_user(reported_user_id).get('gender'))
     
-    await bot.send_message(ADMIN_ID,
-        f"🚨 <b>Новая жалоба #{report_id}</b>\n\n👤 <b>Жалобщик:</b> {user_id} ({user_gender})\n👤 <b>Нарушитель:</b> {reported_user_id} ({reported_gender})\n📋 <b>Причина:</b> {reason}",
-        parse_mode='HTML', reply_markup=admin_report_menu(report_id)
+    await bot.send_message(
+        ADMIN_ID,
+        f"🚨 <b>Новая жалоба #{report_id}</b>\n\n"
+        f"👤 <b>Жалобщик:</b> {user_id} ({user_gender})\n"
+        f"👤 <b>Нарушитель:</b> {reported_user_id} ({reported_gender})\n"
+        f"📋 <b>Причина:</b> {reason}",
+        parse_mode='HTML',
+        reply_markup=admin_report_menu(report_id)
     )
 
 @dp.callback_query(F.data == "back_to_chat")
