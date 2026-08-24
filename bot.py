@@ -37,7 +37,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # ⚙️ Настройки
-ADMIN_ID = 2133091842
+ADMIN_IDS = [2133091842, 180036996, 1862873472]  # ← ДОБАВЛЯЙ НОВЫХ АДМИНОВ СЮДА!
 FREE_CHAT_LIMIT = 10
 TRIAL_HOURS = 24
 
@@ -374,7 +374,7 @@ async def start_command(message: Message):
         )
         return
     
-    if message.from_user.id == ADMIN_ID:
+    if message.from_user.id in ADMIN_IDS:
         await message.answer("🛠 Панель администратора", reply_markup=admin_menu())
     else:
         await message.answer(
@@ -388,14 +388,14 @@ async def rules_command(message: Message):
 
 @dp.message(Command("admin"))
 async def admin_command(message: Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Доступ запрещен")
         return
     await message.answer("🛠 Панель администратора", reply_markup=admin_menu())
 
 @dp.message(Command("menu"))
 async def menu_command(message: Message):
-    if message.from_user.id == ADMIN_ID:
+    if message.from_user.id in ADMIN_IDS:
         await message.answer("🛠 Панель администратора", reply_markup=admin_menu())
     else:
         await message.answer("📋 Главное меню", reply_markup=main_menu())
@@ -557,7 +557,7 @@ async def back_to_settings(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "back_to_main")
 async def back_to_main_callback(callback: CallbackQuery):
-    if callback.from_user.id == ADMIN_ID:
+    if callback.from_user.id in ADMIN_IDS:
         await callback.message.edit_text("🛠 Панель администратора")
     else:
         await callback.message.answer("📋 Главное меню:", reply_markup=main_menu())
@@ -768,7 +768,7 @@ async def report_reason_selected(callback: CallbackQuery):
     reported_gender = get_gender_text(get_user(reported_user_id).get('gender'))
     
     await bot.send_message(
-        ADMIN_ID,
+        ADMIN_IDS[0],  # Отправляем первому админу (тебе)
         f"🚨 <b>Новая жалоба #{report_id}</b>\n\n"
         f"👤 <b>Жалобщик:</b> {user_id} ({user_gender})\n"
         f"👤 <b>Нарушитель:</b> {reported_user_id} ({reported_gender})\n"
@@ -792,395 +792,4 @@ async def buy_sub(message: Message):
 @dp.callback_query(lambda c: c.data.startswith("buy_") or c.data == "back")
 async def subscription_choice(callback: types.CallbackQuery):
     if callback.data == "back":
-        return await callback.message.edit_text("Меню:", reply_markup=main_menu())
-
-    mapping = {
-        "buy_1": (1, 5),
-        "buy_7": (7, 35),
-        "buy_30": (30, 150)
-    }
-
-    days, price = mapping[callback.data]
-
-    prices = [LabeledPrice(label=f"Подписка на {days} дней", amount=price)]
-
-    await bot.send_invoice(
-        chat_id=callback.from_user.id,
-        title="Подписка",
-        description=f"Доступ на {days} дней.",
-        payload=str(days),
-        provider_token="",
-        currency="XTR",
-        prices=prices
-    )
-
-@dp.pre_checkout_query()
-async def process_checkout(query: PreCheckoutQuery):
-    await query.answer(ok=True)
-
-@dp.message(lambda m: m.successful_payment)
-async def success_payment(message: Message):
-    days = int(message.successful_payment.invoice_payload)
-    add_subscription(message.from_user.id, days)
-
-    user = get_user(message.from_user.id)
-    until = user["subscription_until"].strftime("%d.%m.%Y %H:%M")
-
-    await message.answer(f"🎉 Подписка активирована до: {until}", reply_markup=main_menu())
-    await bot.send_message(ADMIN_ID, f"💎 {message.from_user.id} купил подписку на {days} дней.")
-
-
-# ==========================
-# ℹ️ Проверка подписки
-# ==========================
-
-@dp.message(lambda msg: msg.text == "ℹ️ Моя подписка")
-async def sub_info(message: Message):
-    user = get_user(message.from_user.id)
-    reset_daily_limits()
-    if has_active_subscription(user):
-        delta = user["subscription_until"] - datetime.now()
-        days = delta.days
-        hours = delta.seconds // 3600
-        text = f"💎 <b>Подписка активна</b>\n\n⏳ Осталось: {days}д {hours}ч"
-    else:
-        text = f"🚫 <b>Подписка не активна</b>\n\n🎯 Бесплатных чатов сегодня: {user['free_chats_today']}/{FREE_CHAT_LIMIT}"
-    await message.answer(text, parse_mode='HTML')
-
-# ==========================
-# 🛠 АДМИН ПАНЕЛЬ
-# ==========================
-
-@dp.message(F.text == "🚪 Выйти из админ-панели")
-async def exit_admin_panel(message: Message):
-    if message.from_user.id == ADMIN_ID:
-        await message.answer("👋 Вы вышли из админ-панели.", reply_markup=main_menu())
-    else:
-        await message.answer("📋 Главное меню", reply_markup=main_menu())
-
-@dp.message(F.text == "📊 Статистика")
-async def admin_stats(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    
-    active_chats_count = len(active_chats) // 2
-    waiting_count = len(waiting_users)
-    waiting_by_gender = {
-        'male': len(waiting_users_by_gender['male']),
-        'female': len(waiting_users_by_gender['female']),
-        'any': len(waiting_users_by_gender['any'])
-    }
-    total_users = len(users)
-    premium_users = sum(1 for user in users.values() if has_active_subscription(user))
-    trial_users = sum(1 for user in users.values() if user.get("trial_given", False))
-    male_users = sum(1 for user in users.values() if user.get('gender') == 'male')
-    female_users = sum(1 for user in users.values() if user.get('gender') == 'female')
-    unknown_gender = total_users - male_users - female_users
-    
-    stats_text = f"""📊 **Статистика бота:**
-
-👥 **Пользователи:** {total_users}
-💬 **Активность:**
-   В чатах: {active_chats_count}
-   В поиске: {waiting_count}
-   По полу: 👨{waiting_by_gender['male']} 👩{waiting_by_gender['female']} 🤷{waiting_by_gender['any']}
-💎 **Подписки:** Премиум: {premium_users}, Триал: {trial_users}"""
-    await message.answer(stats_text)
-
-@dp.message(F.text == "👥 Пользователи")
-async def users_management(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    
-    users_list = []
-    for user_id, user_data in list(users.items())[:10]:
-        status = "💎" if has_active_subscription(user_data) else "🆓"
-        gender = get_gender_text(user_data.get('gender'))
-        users_list.append(f"{status} ID: {user_id} | {gender}")
-    
-    text = "📋 Последние 10 пользователей:\n" + "\n".join(users_list)
-    if len(users) > 10:
-        text += f"\n\n... и еще {len(users) - 10} пользователей"
-    await message.answer(text)
-
-@dp.message(F.text == "📢 Рассылка")
-async def broadcast_start(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    broadcast_data[message.from_user.id] = {"state": "waiting_message"}
-    await message.answer("📝 Отправьте сообщение для рассылки:")
-
-@dp.message(lambda msg: msg.from_user.id in broadcast_data and broadcast_data[msg.from_user.id]["state"] == "waiting_message")
-async def broadcast_message_received(message: Message):
-    user_id = message.from_user.id
-    broadcast_data[user_id] = {"state": "waiting_confirmation", "message_text": message.text}
-    await message.answer(f"📨 Подтвердите рассылку:\n\n{message.text}", reply_markup=broadcast_confirmation())
-
-@dp.callback_query(F.data == "broadcast_confirm")
-async def broadcast_confirm(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    if user_id not in broadcast_data:
-        await callback.answer("❌ Данные рассылки утеряны")
-        return
-    data = broadcast_data[user_id]
-    await callback.message.edit_text("🔄 Начинаю рассылку...")
-    success = 0
-    failed = 0
-    for user_id in users.keys():
-        try:
-            await bot.send_message(user_id, data["message_text"])
-            success += 1
-            await asyncio.sleep(0.05)
-        except:
-            failed += 1
-    del broadcast_data[user_id]
-    await callback.message.edit_text(f"✅ Рассылка завершена:\n• Успешно: {success}\n• Не удалось: {failed}")
-
-@dp.callback_query(F.data == "broadcast_cancel")
-async def broadcast_cancel(callback: CallbackQuery):
-    if callback.from_user.id in broadcast_data:
-        del broadcast_data[callback.from_user.id]
-    await callback.message.edit_text("❌ Рассылка отменена")
-
-@dp.message(F.text == "⚙️ Управление подписками")
-async def subscription_management(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    await message.answer("💎 Управление подписками:", reply_markup=subscription_management_menu())
-
-@dp.callback_query(F.data == "admin_add_sub")
-async def admin_add_subscription(callback: CallbackQuery):
-    await callback.message.edit_text("➕ Добавление подписки\n\nИспользуйте: /add_sub user_id days")
-
-@dp.callback_query(F.data == "admin_remove_sub")
-async def admin_remove_subscription(callback: CallbackQuery):
-    await callback.message.edit_text("❌ Снятие подписки\n\nИспользуйте: /remove_sub user_id")
-
-@dp.callback_query(F.data == "admin_list_subs")
-async def admin_list_subscriptions(callback: CallbackQuery):
-    premium_users = []
-    for user_id, user_data in users.items():
-        if has_active_subscription(user_data):
-            until = user_data["subscription_until"].strftime("%d.%m.%Y")
-            days_left = (user_data["subscription_until"] - datetime.now()).days
-            premium_users.append(f"👤 {user_id} | до {until} | {days_left}д")
-    if premium_users:
-        text = "💎 Пользователи с подпиской:\n" + "\n".join(premium_users[:10])
-    else:
-        text = "❌ Нет пользователей с подпиской"
-    await callback.message.edit_text(text)
-
-@dp.callback_query(F.data == "admin_back")
-async def admin_back(callback: CallbackQuery):
-    await callback.message.edit_text("🛠 Панель администратора")
-
-@dp.message(F.text == "🚨 Жалобы")
-async def admin_reports(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    new_reports = [r for r in reports.values() if r["status"] == "new"]
-    if not new_reports:
-        await message.answer("✅ Нет новых жалоб.")
-        return
-    report_id = next(iter(reports))
-    await show_report(message, report_id)
-
-async def show_report(message, report_id):
-    if report_id not in reports:
-        await message.answer("❌ Жалоба не найдена.")
-        return
-    report = reports[report_id]
-    user = get_user(report["user_id"])
-    reported_user = get_user(report["reported_user_id"])
-    text = f"🚨 Жалоба #{report_id}\n👤 Жалобщик: {report['user_id']}\n👤 Нарушитель: {report['reported_user_id']}\n📋 Причина: {report['reason']}"
-    await message.answer(text, reply_markup=admin_report_menu(report_id))
-
-@dp.callback_query(F.data.startswith("view_chat_"))
-async def view_chat_history(callback: CallbackQuery):
-    report_id = int(callback.data.split("_")[2])
-    if report_id not in reports:
-        await callback.answer("❌ Жалоба не найдена")
-        return
-    report = reports[report_id]
-    chat_history = report["chat_history"]
-    if not chat_history:
-        await callback.message.answer("📝 История чата пуста.")
-        return
-    history_text = "📝 История чата:\n"
-    for msg in chat_history[-5:]:
-        user_prefix = "👤" if msg["user"] == report["user_id"] else "🚨"
-        history_text += f"{user_prefix}: {msg['text']}\n"
-    await callback.message.answer(history_text)
-
-@dp.callback_query(F.data.startswith("ban_both_"))
-async def ban_both_users(callback: CallbackQuery):
-    report_id = int(callback.data.split("_")[2])
-    if report_id not in reports:
-        await callback.answer("❌ Жалоба не найдена")
-        return
-    report = reports[report_id]
-    user_id = report["user_id"]
-    reported_id = report["reported_user_id"]
-    banned_users.add(user_id)
-    banned_users.add(reported_id)
-    reports[report_id]["status"] = "resolved"
-    await callback.message.edit_text(f"✅ Оба пользователя заблокированы")
-
-@dp.callback_query(F.data.startswith("ban_reporter_"))
-async def ban_reporter(callback: CallbackQuery):
-    report_id = int(callback.data.split("_")[2])
-    if report_id not in reports:
-        await callback.answer("❌ Жалоба не найдена")
-        return
-    report = reports[report_id]
-    user_id = report["user_id"]
-    banned_users.add(user_id)
-    reports[report_id]["status"] = "resolved"
-    await callback.message.edit_text(f"✅ Жалобщик {user_id} заблокирован")
-
-@dp.callback_query(F.data.startswith("ban_reported_"))
-async def ban_reported(callback: CallbackQuery):
-    report_id = int(callback.data.split("_")[2])
-    if report_id not in reports:
-        await callback.answer("❌ Жалоба не найдена")
-        return
-    report = reports[report_id]
-    reported_id = report["reported_user_id"]
-    banned_users.add(reported_id)
-    reports[report_id]["status"] = "resolved"
-    await callback.message.edit_text(f"✅ Нарушитель {reported_id} заблокирован")
-
-@dp.callback_query(F.data.startswith("reject_report_"))
-async def reject_report(callback: CallbackQuery):
-    report_id = int(callback.data.split("_")[2])
-    if report_id not in reports:
-        await callback.answer("❌ Жалоба не найдена")
-        return
-    reports[report_id]["status"] = "rejected"
-    await callback.message.edit_text(f"✅ Жалоба #{report_id} отклонена")
-
-@dp.callback_query(F.data == "next_report")
-async def next_report(callback: CallbackQuery):
-    new_reports = [r for r in reports.values() if r["status"] == "new"]
-    if not new_reports:
-        await callback.message.edit_text("✅ Нет новых жалоб.")
-        return
-    current_report_id = next(iter(reports))
-    await show_report(callback.message, current_report_id)
-
-@dp.message(F.text == "🚫 Заблокированные")
-async def banned_users_list(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    if not banned_users:
-        await message.answer("✅ Нет заблокированных пользователей.")
-        return
-    banned_list = "🚫 Заблокированные:\n" + "\n".join([f"👤 {user_id}" for user_id in list(banned_users)[:10]])
-    await message.answer(banned_list)
-
-# ==========================
-# 🎯 КОМАНДЫ УПРАВЛЕНИЯ
-# ==========================
-
-@dp.message(Command("add_sub"))
-async def add_subscription_command(message: Message, command: CommandObject):
-    if message.from_user.id != ADMIN_ID:
-        return
-    if not command.args:
-        await message.answer("❌ Использование: /add_sub user_id days")
-        return
-    try:
-        args = command.args.split()
-        user_id = int(args[0])
-        days = int(args[1])
-        add_subscription(user_id, days)
-        user = get_user(user_id)
-        until = user["subscription_until"].strftime("%d.%m.%Y %H:%M")
-        await message.answer(f"✅ Пользователю {user_id} добавлено {days} дней подписки\nДо: {until}")
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
-
-@dp.message(Command("remove_sub"))
-async def remove_subscription_command(message: Message, command: CommandObject):
-    if message.from_user.id != ADMIN_ID:
-        return
-    if not command.args:
-        await message.answer("❌ Использование: /remove_sub user_id")
-        return
-    try:
-        user_id = int(command.args)
-        user = get_user(user_id)
-        user["subscription_until"] = datetime.now() - timedelta(days=1)
-        await message.answer(f"✅ Подписка пользователя {user_id} отменена")
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
-
-@dp.message(Command("user_info"))
-async def user_info_command(message: Message, command: CommandObject):
-    if message.from_user.id != ADMIN_ID:
-        return
-    if not command.args:
-        await message.answer("❌ Использование: /user_info user_id")
-        return
-    try:
-        user_id = int(command.args)
-        user = get_user(user_id)
-        status = "💎" if has_active_subscription(user) else "🆓"
-        gender = get_gender_text(user.get('gender'))
-        info_text = f"👤 ID: {user_id}\nСтатус: {status}\nПол: {gender}"
-        await message.answer(info_text)
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
-
-@dp.message(Command("broadcast"))
-async def broadcast_command(message: Message, command: CommandObject):
-    if message.from_user.id != ADMIN_ID:
-        return
-    if not command.args:
-        await message.answer("❌ Использование: /broadcast ваш_текст")
-        return
-    broadcast_data[message.from_user.id] = {"state": "waiting_confirmation", "message_text": command.args}
-    await message.answer(f"📨 Подтвердите рассылку:\n\n{command.args}", reply_markup=broadcast_confirmation())
-
-# ==========================
-# 📡 Relay Chat
-# ==========================
-
-@dp.message()
-async def relay(message: Message):
-    user_id = message.from_user.id
-    if is_user_banned(user_id):
-        await message.answer("🚫 Вы заблокированы.")
-        return
-    if user_id in active_chats:
-        partner = active_chats[user_id]
-        if is_user_banned(partner):
-            await message.answer("❌ Собеседник заблокирован.")
-            active_chats.pop(user_id)
-            return
-        add_to_chat_history(user_id, message.text)
-        add_to_chat_history(partner, message.text)
-        await bot.send_message(partner, message.text)
-
-
-# ==========================
-# ▶ RUN
-# ==========================
-
-def main():
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-    
-    if WEBHOOK_URL:
-        app = web.Application()
-        webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
-        webhook_requests_handler.register(app, path=WEBHOOK_PATH)
-        setup_application(app, dp, bot=bot)
-        return app
-
-if __name__ == "__main__":
-    if WEBHOOK_URL:
-        app = main()
-        web.run_app(app, host="0.0.0.0", port=10000)
-    else:
-        asyncio.run(dp.start_polling(bot))
+        return await callback.message.edit_text("
