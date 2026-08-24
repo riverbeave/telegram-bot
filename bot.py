@@ -37,7 +37,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # ⚙️ Настройки
-ADMIN_IDS = [2133091842]  # ← ДОБАВЛЯЙ НОВЫХ АДМИНОВ СЮДА!
+ADMIN_IDS = [2133091842, 1804036996, 1862873472]  # ← ДОБАВЛЯЙ НОВЫХ АДМИНОВ СЮДА!
 FREE_CHAT_LIMIT = 10
 TRIAL_HOURS = 24
 
